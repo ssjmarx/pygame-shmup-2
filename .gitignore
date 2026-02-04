@@ -35,6 +35,7 @@ venv/
 *.code-workspace
 .plans/
 .memory-bank/
+.clinerules
 
 # IDE
 *.swp
