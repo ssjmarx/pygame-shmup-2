@@ -14,7 +14,10 @@ pub enum Command {
     // Mouse targeting
     SetMouseTarget(f64, f64, f64, f64),    // Mouse position + camera position (screen coords)
     
-    // Future phases will add:
-    // Shoot,
-    // Etc.
+    // Shooting commands
+    SetTargetEntity(Option<usize>),        // Set target entity ID for tracking shots
+    StartShootingTracking,                  // Start shooting tracking bullets
+    StopShootingTracking,                   // Stop shooting tracking bullets
+    StartAutoFire,                          // Start autofiring
+    StopAutoFire,                           // Stop autofiring
 }

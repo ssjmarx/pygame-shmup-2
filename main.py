@@ -59,8 +59,10 @@ class InputHandler:
         self.alt_pressed = False
         self.shift_pressed = False
         self.ctrl_pressed = False
-        # Mouse position
+        self.space_pressed = False  # For firing
+        # Mouse position and buttons
         self.mouse_pos = (0, 0)
+        self.left_mouse_pressed = False  # Track if left mouse is currently down
 
     def handle(self, renderer):
         """Process all pygame events and send commands"""
@@ -88,6 +90,19 @@ class InputHandler:
                 scaled_x = self.mouse_pos[0] / scale
                 scaled_y = self.mouse_pos[1] / scale
                 self.game_engine.set_mouse_target(scaled_x, scaled_y)
+            
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click PRESS - start autofire
+                    self.left_mouse_pressed = True
+                    self.game_engine.start_autofire()
+            
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1:  # Left click RELEASE - fire tracking shot and stop autofire
+                    self.left_mouse_pressed = False
+                    self.game_engine.stop_autofire()
+                    # Fire tracking shot on release
+                    self.game_engine.start_shooting_tracking()
+                    self.game_engine.stop_shooting_tracking()
 
         # Continuous input (held keys) - send movement commands every frame
         if self.w_pressed:
@@ -111,6 +126,10 @@ class InputHandler:
             self.a_pressed = True
         elif event.key == pygame.K_d or event.key == pygame.K_RIGHT:
             self.d_pressed = True
+        elif event.key == pygame.K_SPACE:
+            # Space press: start autofire
+            self.space_pressed = True
+            self.game_engine.start_autofire()
         elif event.key == pygame.K_LALT or event.key == pygame.K_RALT:
             self.alt_pressed = True
             self.game_engine.set_alt_mode(True)
@@ -131,6 +150,13 @@ class InputHandler:
             self.a_pressed = False
         elif event.key == pygame.K_d or event.key == pygame.K_RIGHT:
             self.d_pressed = False
+        elif event.key == pygame.K_SPACE:
+            # Space release: fire tracking shot and stop autofire
+            self.space_pressed = False
+            self.game_engine.stop_autofire()
+            # Fire tracking shot on release
+            self.game_engine.start_shooting_tracking()
+            self.game_engine.stop_shooting_tracking()
         elif event.key == pygame.K_LALT or event.key == pygame.K_RALT:
             self.alt_pressed = False
             self.game_engine.set_alt_mode(False)
@@ -251,6 +277,11 @@ class Renderer:
         # Draw stars first (background layer)
         for star in stars:
             self.draw_star(star, scale, cam_x_scaled, cam_y_scaled)
+        
+        # Draw projectiles (in front of stars)
+        projectiles = render_data.get("projectiles", [])
+        for proj in projectiles:
+            self.draw_projectile(proj, scale)
 
         # Convert to screen coordinates
         screen_x = int(player_x_scaled - cam_x_scaled)
@@ -284,6 +315,18 @@ class Renderer:
         # Draw outline (green stroke, scaled width - thinner stroke)
         stroke_width = int(1.5 * scale)
         pygame.draw.polygon(self.screen, PLAYER_COLOR, rotated_vertices, stroke_width)
+        
+        # Draw guns
+        left_gun_angle = render_data.get("left_gun_angle", -math.pi / 2)
+        right_gun_angle = render_data.get("right_gun_angle", -math.pi / 2)
+        
+        # Left gun (offset_x: 7.5, offset_y: 10.0)
+        self.draw_gun(player_x, player_y, player_rotation, left_gun_angle, 
+                     7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
+        
+        # Right gun (offset_x: -7.5, offset_y: 10.0)
+        self.draw_gun(player_x, player_y, player_rotation, right_gun_angle,
+                     -7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
 
         # Draw debug info
         player_vx = render_data.get("player_vx", 0.0)
@@ -293,6 +336,57 @@ class Renderer:
         # Update display
         pygame.display.flip()
 
+    def draw_projectile(self, proj, scale):
+        """Draw a projectile as a hollow pill shape with thin lines"""
+        # Calculate screen position (already scaled in Rust)
+        screen_x = int(proj['x'] * scale)
+        screen_y = int(proj['y'] * scale)
+        length = proj['length'] * scale
+        width = proj['width'] * scale
+        rotation = proj['rotation']
+        color = proj['color']
+        
+        # Make bullet smaller and hollow
+        bullet_length = length * 0.5  # Smaller length
+        bullet_width = max(1, int(width * 1.5))  # Thinner width
+        
+        # Calculate endpoints
+        dx = math.cos(rotation) * (bullet_length / 2)
+        dy = math.sin(rotation) * (bullet_length / 2)
+        
+        start_x = screen_x - dx
+        start_y = screen_y - dy
+        end_x = screen_x + dx
+        end_y = screen_y + dy
+        
+        # Draw thin hollow line (no fill)
+        pygame.draw.line(self.screen, color, (start_x, start_y), (end_x, end_y), bullet_width)
+    
+    def draw_gun(self, player_x, player_y, player_rotation, gun_angle, offset_x, offset_y, scale, cam_x_scaled, cam_y_scaled):
+        """Draw a single gun mounted on the player"""
+        # Calculate gun position (rotated with player)
+        # Rotate offset by player rotation
+        rx = offset_x * math.cos(player_rotation) - offset_y * math.sin(player_rotation)
+        ry = offset_x * math.sin(player_rotation) + offset_y * math.cos(player_rotation)
+        
+        # Gun world position
+        gun_x = player_x + rx
+        gun_y = player_y + ry
+        
+        # Screen position
+        screen_x = int(gun_x * scale) - cam_x_scaled
+        screen_y = int(gun_y * scale) - cam_y_scaled
+        
+        # Gun length
+        gun_length = 10.0 * scale  # Half of 20px height
+        
+        # Calculate gun end point (rotated by gun angle)
+        end_x = screen_x + math.cos(gun_angle) * gun_length
+        end_y = screen_y + math.sin(gun_angle) * gun_length
+        
+        # Draw gun as a line
+        pygame.draw.line(self.screen, (150, 150, 150), (screen_x, screen_y), (end_x, end_y), 2)
+
     def draw_debug_info(self, player_x, player_y, cam_x, cam_y, player_vx, player_vy):
         """Draw position and camera info on screen"""
         velocity = (player_vx**2 + player_vy**2)**0.5
@@ -301,11 +395,13 @@ class Renderer:
             f"Velocity: {velocity:.1f} px/s",
             f"Camera: ({cam_x:.1f}, {cam_y:.1f})",
             "WASD/Arrows: Move",
+            "Space/Left Click (hold): Autofire",
+            "Space/Left Click (release): Tracking Shot",
             "ESC: Quit",
         ]
 
         for i, line in enumerate(info_lines):
-            text = self.font.render(line, True, (255, 255, 255))
+            text = self.font.render(line, True, (255,255,255))
             self.screen.blit(text, (10, 10 + i * 30))
 
 

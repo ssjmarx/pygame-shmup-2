@@ -2,12 +2,18 @@ use pyo3::prelude::*;
 
 mod camera;
 mod command;
+mod config;
+mod gun;
 mod object_pool;
+mod projectile;
 mod star;
 mod state;
 
 use camera::Camera;
 use command::Command;
+use config::{GunConfig, ProjectileConfig, PlayerGunConfig};
+use gun::Gun;
+use projectile::{Projectile, ProjectileRenderData};
 use star::StarRenderData;
 use state::GameState;
 
@@ -60,6 +66,31 @@ impl GameEngine {
         let (cam_x, cam_y) = self.camera.get_offset();
         self.state.add_command(Command::SetMouseTarget(x, y, cam_x, cam_y));
     }
+    
+    /// Set target entity for tracking shots
+    fn set_target_entity(&mut self, entity_id: Option<usize>) {
+        self.state.add_command(Command::SetTargetEntity(entity_id));
+    }
+    
+    /// Start shooting tracking bullets
+    fn start_shooting_tracking(&mut self) {
+        self.state.add_command(Command::StartShootingTracking);
+    }
+    
+    /// Stop shooting tracking bullets
+    fn stop_shooting_tracking(&mut self) {
+        self.state.add_command(Command::StopShootingTracking);
+    }
+    
+    /// Start autofiring
+    fn start_autofire(&mut self) {
+        self.state.add_command(Command::StartAutoFire);
+    }
+    
+    /// Stop autofiring
+    fn stop_autofire(&mut self) {
+        self.state.add_command(Command::StopAutoFire);
+    }
 
     /// Update game state by dt seconds
     fn update(&mut self, dt: f64) {
@@ -72,6 +103,8 @@ impl GameEngine {
         let player = self.state.get_player();
         let (cam_x, cam_y) = self.camera.get_offset();
         let star_data = self.state.get_star_render_data();
+        let projectile_data = self.state.get_projectile_render_data();
+        let (left_gun_angle, right_gun_angle) = self.state.get_gun_angles();
 
         // Convert star data to Python list
         let stars_list = pyo3::types::PyList::new_bound(py, star_data.iter().map(|star| {
@@ -103,6 +136,18 @@ impl GameEngine {
             star_dict.unbind()
         }));
 
+        // Convert projectile data to Python list
+        let projectiles_list = pyo3::types::PyList::new_bound(py, projectile_data.iter().map(|proj| {
+            let proj_dict = pyo3::types::PyDict::new_bound(py);
+            proj_dict.set_item("x", proj.x).unwrap();
+            proj_dict.set_item("y", proj.y).unwrap();
+            proj_dict.set_item("rotation", proj.rotation).unwrap();
+            proj_dict.set_item("length", proj.length).unwrap();
+            proj_dict.set_item("width", proj.width).unwrap();
+            proj_dict.set_item("color", (proj.color.0, proj.color.1, proj.color.2)).unwrap();
+            proj_dict.unbind()
+        }));
+
         let dict = pyo3::types::PyDict::new_bound(py);
         dict.set_item("player_x", player.x)?;
         dict.set_item("player_y", player.y)?;
@@ -112,6 +157,9 @@ impl GameEngine {
         dict.set_item("player_vx", player.vx)?;
         dict.set_item("player_vy", player.vy)?;
         dict.set_item("stars", stars_list)?;
+        dict.set_item("projectiles", projectiles_list)?;
+        dict.set_item("left_gun_angle", left_gun_angle)?;
+        dict.set_item("right_gun_angle", right_gun_angle)?;
         Ok(dict.unbind().into())
     }
 }

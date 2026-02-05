@@ -1,5 +1,8 @@
 use crate::command::Command;
+use crate::config::{GunConfig, ProjectileConfig, PlayerGunConfig};
+use crate::gun::Gun;
 use crate::object_pool::ObjectPool;
+use crate::projectile::{Projectile, ProjectileRenderData, ProjectileType};
 use crate::star::Star;
 
 /// Movement mode enum
@@ -38,6 +41,21 @@ pub struct Player {
     pub boost_mode: bool,               // Shift held
     pub alt_mode: bool,                 // Alt held (no resistance)
     
+    // Guns
+    pub left_gun: Gun,
+    pub right_gun: Gun,
+    
+    // Shooting state
+    pub tracking_fired_this_click: bool,  // Track if we've fired tracking shot this click
+    pub is_autofiring: bool,
+    pub last_tracking_shot_time: f64,
+    pub mouse_target_entity_id: Option<usize>,
+    
+    // Gun configuration
+    pub gun_length: f64,
+    pub movement_compensation: f64,
+    pub tracking_cooldown: f64,
+    
     // Physics constants
     pub rotation_speed: f64,
     pub thruster_acceleration: f64,
@@ -66,6 +84,14 @@ impl Default for Player {
 
 impl Player {
     pub fn new() -> Self {
+        let gun_config = GunConfig::default();
+        let (left_offset_x, left_offset_y) = (7.5, 10.0);
+        let (right_offset_x, right_offset_y) = (-7.5, 10.0);
+        
+        // Dead zone offsets: left gun 45° counterclockwise (-π/4), right gun 45° clockwise (π/4)
+        let left_dead_zone_offset = -std::f64::consts::PI / 4.0;  // 45° counterclockwise
+        let right_dead_zone_offset = std::f64::consts::PI / 4.0;  // 45° clockwise
+        
         Player {
             x: 0.0,
             y: 0.0,
@@ -80,6 +106,22 @@ impl Player {
             control_mode: false,
             boost_mode: false,
             alt_mode: false,
+            
+            // Guns
+            left_gun: Gun::new(left_offset_x, left_offset_y, gun_config.clone(), left_dead_zone_offset),
+            right_gun: Gun::new(right_offset_x, right_offset_y, gun_config, right_dead_zone_offset),
+            
+            // Shooting state
+            tracking_fired_this_click: false,
+            is_autofiring: false,
+            last_tracking_shot_time: 0.0,
+            mouse_target_entity_id: None,
+            
+            // Gun configuration
+            gun_length: 10.0,                // Half of 20px height
+            movement_compensation: 1.0,
+            tracking_cooldown: 0.5,
+            
             rotation_speed: 4.0,              // ~229 degrees/second
             thruster_acceleration: 1000.0,     // Maneuvering thrusters
             main_engine_acceleration: 600.0,   // Normal main engine thrust
@@ -331,10 +373,12 @@ pub struct GameState {
     player: Player,
     command_buffer: Vec<Command>,
     stars: ObjectPool<Star>,
+    projectiles: ObjectPool<Projectile>,
     prev_camera_x: f64,
     prev_camera_y: f64,
     camera_x: f64,  // Actual camera position
     camera_y: f64,  // Actual camera position
+    current_time: f64,
 }
 
 impl GameState {
@@ -359,10 +403,12 @@ impl GameState {
             player,
             command_buffer: Vec::new(),
             stars,
+            projectiles: ObjectPool::new(100, Projectile::default()),
             prev_camera_x: initial_cam_x,
             prev_camera_y: initial_cam_y,
             camera_x: initial_cam_x,
             camera_y: initial_cam_y,
+            current_time: 0.0,
         }
     }
 
@@ -395,6 +441,61 @@ impl GameState {
                     let dy = world_y - self.player.y;
                     self.player.mouse_target_angle = Some(dy.atan2(dx));
                 }
+                Command::SetTargetEntity(entity_id) => {
+                    self.player.mouse_target_entity_id = entity_id;
+                }
+                Command::StartShootingTracking => {
+                    // Fire tracking shot immediately on click
+                    if !self.player.tracking_fired_this_click {
+                        self.player.tracking_fired_this_click = true;
+                        self.player.last_tracking_shot_time = self.current_time;
+                        
+                        let config = ProjectileConfig::default();
+                        
+                        // Left gun - use player_rotation to transform offset position
+                        let left_angle = self.player.left_gun.get_firing_angle();
+                        let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
+                        let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
+                        let left_x = self.player.x + left_rx;
+                        let left_y = self.player.y + left_ry;
+                        
+                        if let Some(_) = self.projectiles.allocate(Projectile::new_tracking(
+                            left_x, left_y, left_angle,
+                            None,  // Don't target player
+                            config.clone(),
+                            self.player.vx,
+                            self.player.vy
+                        )) {
+                            self.player.left_gun.add_recoil(config.tracking_recoil_amount);
+                        }
+                        
+                        // Right gun - use player_rotation to transform offset position
+                        let right_angle = self.player.right_gun.get_firing_angle();
+                        let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
+                        let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
+                        let right_x = self.player.x + right_rx;
+                        let right_y = self.player.y + right_ry;
+                        
+                        if let Some(_) = self.projectiles.allocate(Projectile::new_tracking(
+                            right_x, right_y, right_angle,
+                            None,  // Don't target player
+                            config.clone(),
+                            self.player.vx,
+                            self.player.vy
+                        )) {
+                            self.player.right_gun.add_recoil(config.tracking_recoil_amount);
+                        }
+                    }
+                }
+                Command::StopShootingTracking => {
+                    self.player.tracking_fired_this_click = false;
+                }
+                Command::StartAutoFire => {
+                    self.player.is_autofiring = true;
+                }
+                Command::StopAutoFire => {
+                    self.player.is_autofiring = false;
+                }
             }
         }
         
@@ -406,8 +507,93 @@ impl GameState {
             self.player.input_dy /= input_mag;
         }
         
+        // Update time BEFORE player movement (needed by autofire timing)
+        self.current_time += dt;
+        
+        // Update guns tracking BEFORE player movement (so spawn points use pre-movement position)
+        // Set gun target angle to mouse target (same for both guns)
+        if let Some(mouse_angle) = self.player.mouse_target_angle {
+            self.player.left_gun.set_target_angle(mouse_angle);
+            self.player.right_gun.set_target_angle(mouse_angle);
+        }
+        
+        // Update both guns - pass player rotation so guns can rotate their base angle
+        self.player.left_gun.update_tracking_with_ship(
+            self.player.facing_angle,
+            self.player.rotation,  // Ship's visual rotation
+            self.player.vx,
+            self.player.vy,
+            self.player.get_top_speed(),
+            self.player.movement_compensation,
+            dt
+        );
+        
+        self.player.right_gun.update_tracking_with_ship(
+            self.player.facing_angle,
+            self.player.rotation,  // Ship's visual rotation
+            self.player.vx,
+            self.player.vy,
+            self.player.get_top_speed(),
+            self.player.movement_compensation,
+            dt
+        );
+        
+        // Handle autofire (hold) BEFORE player movement
+        // This ensures spawn points use pre-movement player position
+        if self.player.is_autofiring {
+            // Spool up autofire rate
+            self.player.left_gun.spool_up_autofire(dt);
+            self.player.right_gun.spool_up_autofire(dt);
+            
+            let config = ProjectileConfig::default();
+            
+            // Check if left gun can fire
+            if self.player.left_gun.update_autofire(self.current_time) {
+                let left_angle = self.player.left_gun.get_firing_angle();
+                let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
+                let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
+                let left_x = self.player.x + left_rx;
+                let left_y = self.player.y + left_ry;
+                
+                self.projectiles.allocate(Projectile::new_autofire(left_x, left_y, left_angle, config.clone(),
+                                                         self.player.vx, self.player.vy));
+                self.player.left_gun.add_recoil(config.autofire_recoil_amount);
+            }
+            
+            // Check if right gun can fire
+            if self.player.right_gun.update_autofire(self.current_time) {
+                let right_angle = self.player.right_gun.get_firing_angle();
+                let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
+                let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
+                let right_x = self.player.x + right_rx;
+                let right_y = self.player.y + right_ry;
+                
+                self.projectiles.allocate(Projectile::new_autofire(right_x, right_y, right_angle, config.clone(),
+                                                           self.player.vx, self.player.vy));
+                self.player.right_gun.add_recoil(config.autofire_recoil_amount);
+            }
+        }
+        
         // Update player physics
         self.player.update(dt);
+        
+        // Update projectiles
+        // Collect entity positions for tracking (just player for now)
+        let entities = [(self.player.x, self.player.y, 999)]; // Player ID 999
+        let mut to_remove: Vec<usize> = Vec::new();
+        
+        for (index, proj) in self.projectiles.iter_active_mut() {
+            proj.update(dt, &entities);
+            
+            if proj.is_expired() {
+                to_remove.push(index);
+            }
+        }
+        
+        // Remove expired projectiles
+        for index in to_remove {
+            self.projectiles.deallocate(index);
+        }
         
         // Update stars with parallax
         // Use smoothed camera position (same as Camera struct logic)
@@ -468,6 +654,28 @@ impl GameState {
         self.stars.iter_active()
             .map(|(_, star)| star.to_render_data(self.camera_x, self.camera_y))
             .collect()
+    }
+    
+    pub fn get_projectile_render_data(&self) -> Vec<ProjectileRenderData> {
+        self.projectiles.iter_active()
+            .map(|(_, proj)| {
+                let screen_x = proj.x - self.camera_x;
+                let screen_y = proj.y - self.camera_y;
+                
+                ProjectileRenderData {
+                    x: screen_x,
+                    y: screen_y,
+                    rotation: proj.get_rotation(),
+                    length: proj.length,
+                    width: proj.size,
+                    color: proj.get_color(),
+                }
+            })
+            .collect()
+    }
+    
+    pub fn get_gun_angles(&self) -> (f64, f64) {
+        (self.player.left_gun.angle, self.player.right_gun.angle)
     }
 }
 
