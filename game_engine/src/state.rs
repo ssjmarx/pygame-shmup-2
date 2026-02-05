@@ -379,6 +379,7 @@ pub struct GameState {
     camera_x: f64,  // Actual camera position
     camera_y: f64,  // Actual camera position
     current_time: f64,
+    prev_control_mode: bool,  // Track control mode transitions
 }
 
 impl GameState {
@@ -409,6 +410,7 @@ impl GameState {
             camera_x: initial_cam_x,
             camera_y: initial_cam_y,
             current_time: 0.0,
+            prev_control_mode: false,
         }
     }
 
@@ -596,12 +598,40 @@ impl GameState {
         }
         
         // Update stars with parallax
-        // Use smoothed camera position (same as Camera struct logic)
+        // Use smoothed camera position with dynamic lerp based on speed
         let target_cam_x = self.player.x - 400.0;  // Center player on screen
         let target_cam_y = self.player.y - 300.0;
         
-        // Apply smoothing (0.4 lerp factor, same as Camera struct)
-        let smoothing = 0.4;
+        // Calculate player speed
+        let speed = (self.player.vx * self.player.vx + self.player.vy * self.player.vy).sqrt();
+        
+        // Dynamic smoothing based on speed:
+        // - Speed 1000 px/s: 0.4 (minimum)
+        // - Speed 10000 px/s: 0.8 (maximum)
+        // - Interpolate between based on current speed
+        let min_speed = 1000.0;
+        let max_speed = 10000.0;
+        let min_smoothing = 0.4;
+        let max_smoothing = 0.8;
+        let snap_smoothing = 0.9;  // Fast lerp when in control mode
+        
+        // Calculate smoothing factor
+        let smoothing = if self.player.control_mode {
+            // Fast lerp when in control mode
+            snap_smoothing
+        } else if speed < min_speed {
+            // Below minimum speed: use minimum smoothing
+            min_smoothing
+        } else if speed > max_speed {
+            // Above maximum speed: use maximum smoothing
+            max_smoothing
+        } else {
+            // Interpolate between min and max based on speed
+            let t = (speed - min_speed) / (max_speed - min_speed);
+            min_smoothing + t * (max_smoothing - min_smoothing)
+        };
+        
+        // Apply smoothing
         self.camera_x += (target_cam_x - self.camera_x) * smoothing;
         self.camera_y += (target_cam_y - self.camera_y) * smoothing;
         
@@ -644,6 +674,9 @@ impl GameState {
         // Update previous camera position
         self.prev_camera_x = self.camera_x;
         self.prev_camera_y = self.camera_y;
+        
+        // Update previous control mode state
+        self.prev_control_mode = self.player.control_mode;
     }
 
     pub fn get_player(&self) -> &Player {

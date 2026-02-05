@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 
-mod camera;
 mod command;
 mod config;
 mod gun;
