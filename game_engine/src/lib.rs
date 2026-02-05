@@ -9,7 +9,6 @@ mod projectile;
 mod star;
 mod state;
 
-use camera::Camera;
 use command::Command;
 use config::{GunConfig, ProjectileConfig, PlayerGunConfig};
 use gun::Gun;
@@ -21,7 +20,6 @@ use state::GameState;
 #[pyclass]
 pub struct GameEngine {
     state: GameState,
-    camera: Camera,
 }
 
 #[pymethods]
@@ -30,8 +28,7 @@ impl GameEngine {
     #[new]
     fn new() -> Self {
         let state = GameState::new();
-        let camera = Camera::new();
-        GameEngine { state, camera }
+        GameEngine { state }
     }
 
     /// Send a movement command (direction only)
@@ -63,7 +60,9 @@ impl GameEngine {
     
     /// Set mouse target position
     fn set_mouse_target(&mut self, x: f64, y: f64) {
-        let (cam_x, cam_y) = self.camera.get_offset();
+        // Get camera position from GameState (single source of truth)
+        let cam_x = self.state.get_camera_x();
+        let cam_y = self.state.get_camera_y();
         self.state.add_command(Command::SetMouseTarget(x, y, cam_x, cam_y));
     }
     
@@ -95,13 +94,14 @@ impl GameEngine {
     /// Update game state by dt seconds
     fn update(&mut self, dt: f64) {
         self.state.update(dt);
-        self.camera.track_player(&self.state.get_player());
     }
 
     /// Get render data for Python
     fn get_render_data(&self, py: Python) -> PyResult<PyObject> {
         let player = self.state.get_player();
-        let (cam_x, cam_y) = self.camera.get_offset();
+        // Get camera position from GameState (single source of truth)
+        let cam_x = self.state.get_camera_x();
+        let cam_y = self.state.get_camera_y();
         let star_data = self.state.get_star_render_data();
         let projectile_data = self.state.get_projectile_render_data();
         let (left_gun_angle, right_gun_angle) = self.state.get_gun_angles();

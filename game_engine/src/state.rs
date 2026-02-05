@@ -677,6 +677,14 @@ impl GameState {
     pub fn get_gun_angles(&self) -> (f64, f64) {
         (self.player.left_gun.angle, self.player.right_gun.angle)
     }
+    
+    pub fn get_camera_x(&self) -> f64 {
+        self.camera_x
+    }
+    
+    pub fn get_camera_y(&self) -> f64 {
+        self.camera_y
+    }
 }
 
 #[cfg(test)]

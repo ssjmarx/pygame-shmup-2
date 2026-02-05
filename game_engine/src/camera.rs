@@ -22,7 +22,7 @@ impl Camera {
             y: 0.0,
             screen_width: 800.0,
             screen_height: 600.0,
-            smoothing: 0.4, // Lerp factor (0.0 = no movement, 1.0 = instant)
+            smoothing: 0.7, // Lerp factor (0.0 = no movement, 1.0 = instant)
         }
     }
 
