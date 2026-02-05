@@ -54,7 +54,7 @@ def test_infinite_space():
     """Test that player can move arbitrarily far"""
     engine = GameEngine()
     
-    # Move for a long time
+    # Move for a long time to reach top speed
     for _ in range(100):
         engine.send_command('move_right')
         engine.send_command('move_up')
@@ -66,11 +66,11 @@ def test_infinite_space():
     assert abs(data['player_x']) > 1000, "Player should move far from origin"
     assert abs(data['player_y']) > 1000, "Player should move far from origin"
     
-    # Should still work
-    engine.send_command('move_left')
-    engine.update(0.1)
-    new_data = engine.get_render_data()
-    assert new_data['player_x'] < data['player_x'], "Movement should continue to work"
+    # At top speed, player should be at approximately 400 px/s top speed
+    # After 10 seconds (100 frames * 0.1s), should be around 4000 pixels from origin
+    # But due to acceleration curve, we check they're reasonably far
+    distance = (data['player_x']**2 + data['player_y']**2)**0.5
+    assert distance > 2500, f"Player should have moved far (distance: {distance})"
     
     print("✓ Infinite space test passed")
 

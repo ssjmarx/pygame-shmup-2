@@ -28,7 +28,7 @@ impl GameEngine {
         GameEngine { state, camera }
     }
 
-    /// Send a single movement command
+    /// Send a movement command (direction only)
     fn send_command(&mut self, command_type: &str) {
         let cmd = match command_type {
             "move_up" => Command::MoveUp,
@@ -38,6 +38,27 @@ impl GameEngine {
             _ => return,
         };
         self.state.add_command(cmd);
+    }
+    
+    /// Set alt mode state
+    fn set_alt_mode(&mut self, enabled: bool) {
+        self.state.add_command(Command::ToggleAltMode(enabled));
+    }
+    
+    /// Set boost mode state
+    fn set_boost_mode(&mut self, enabled: bool) {
+        self.state.add_command(Command::ToggleBoostMode(enabled));
+    }
+    
+    /// Set control mode state
+    fn set_control_mode(&mut self, enabled: bool) {
+        self.state.add_command(Command::ToggleControlMode(enabled));
+    }
+    
+    /// Set mouse target position
+    fn set_mouse_target(&mut self, x: f64, y: f64) {
+        let (cam_x, cam_y) = self.camera.get_offset();
+        self.state.add_command(Command::SetMouseTarget(x, y, cam_x, cam_y));
     }
 
     /// Update game state by dt seconds
@@ -88,6 +109,8 @@ impl GameEngine {
         dict.set_item("player_rotation", player.rotation)?;
         dict.set_item("camera_x", cam_x)?;
         dict.set_item("camera_y", cam_y)?;
+        dict.set_item("player_vx", player.vx)?;
+        dict.set_item("player_vy", player.vy)?;
         dict.set_item("stars", stars_list)?;
         Ok(dict.unbind().into())
     }

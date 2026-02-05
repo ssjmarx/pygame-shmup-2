@@ -51,6 +51,16 @@ class InputHandler:
 
     def __init__(self, game_engine):
         self.game_engine = game_engine
+        # Key states
+        self.w_pressed = False
+        self.a_pressed = False
+        self.s_pressed = False
+        self.d_pressed = False
+        self.alt_pressed = False
+        self.shift_pressed = False
+        self.ctrl_pressed = False
+        # Mouse position
+        self.mouse_pos = (0, 0)
 
     def handle(self, renderer):
         """Process all pygame events and send commands"""
@@ -66,20 +76,70 @@ class InputHandler:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     return False
+                self._handle_key_down(event)
 
-        # Continuous input (held keys)
-        keys = pygame.key.get_pressed()
+            elif event.type == pygame.KEYUP:
+                self._handle_key_up(event)
 
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            elif event.type == pygame.MOUSEMOTION:
+                self.mouse_pos = event.pos
+                # Scale mouse position from actual screen size to base resolution (800x600)
+                scale = renderer.screen.get_width() / renderer.base_width
+                scaled_x = self.mouse_pos[0] / scale
+                scaled_y = self.mouse_pos[1] / scale
+                self.game_engine.set_mouse_target(scaled_x, scaled_y)
+
+        # Continuous input (held keys) - send movement commands every frame
+        if self.w_pressed:
             self.game_engine.send_command("move_up")
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+        if self.s_pressed:
             self.game_engine.send_command("move_down")
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        if self.a_pressed:
             self.game_engine.send_command("move_left")
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        if self.d_pressed:
             self.game_engine.send_command("move_right")
 
         return True
+
+    def _handle_key_down(self, event):
+        """Handle key press events"""
+        if event.key == pygame.K_w or event.key == pygame.K_UP:
+            self.w_pressed = True
+        elif event.key == pygame.K_s or event.key == pygame.K_DOWN:
+            self.s_pressed = True
+        elif event.key == pygame.K_a or event.key == pygame.K_LEFT:
+            self.a_pressed = True
+        elif event.key == pygame.K_d or event.key == pygame.K_RIGHT:
+            self.d_pressed = True
+        elif event.key == pygame.K_LALT or event.key == pygame.K_RALT:
+            self.alt_pressed = True
+            self.game_engine.set_alt_mode(True)
+        elif event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
+            self.shift_pressed = True
+            self.game_engine.set_boost_mode(True)
+        elif event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
+            self.ctrl_pressed = True
+            self.game_engine.set_control_mode(True)
+
+    def _handle_key_up(self, event):
+        """Handle key release events"""
+        if event.key == pygame.K_w or event.key == pygame.K_UP:
+            self.w_pressed = False
+        elif event.key == pygame.K_s or event.key == pygame.K_DOWN:
+            self.s_pressed = False
+        elif event.key == pygame.K_a or event.key == pygame.K_LEFT:
+            self.a_pressed = False
+        elif event.key == pygame.K_d or event.key == pygame.K_RIGHT:
+            self.d_pressed = False
+        elif event.key == pygame.K_LALT or event.key == pygame.K_RALT:
+            self.alt_pressed = False
+            self.game_engine.set_alt_mode(False)
+        elif event.key == pygame.K_LSHIFT or event.key == pygame.K_RSHIFT:
+            self.shift_pressed = False
+            self.game_engine.set_boost_mode(False)
+        elif event.key == pygame.K_LCTRL or event.key == pygame.K_RCTRL:
+            self.ctrl_pressed = False
+            self.game_engine.set_control_mode(False)
 
 
 class Renderer:
@@ -226,15 +286,19 @@ class Renderer:
         pygame.draw.polygon(self.screen, PLAYER_COLOR, rotated_vertices, stroke_width)
 
         # Draw debug info
-        self.draw_debug_info(player_x, player_y, cam_x, cam_y)
+        player_vx = render_data.get("player_vx", 0.0)
+        player_vy = render_data.get("player_vy", 0.0)
+        self.draw_debug_info(player_x, player_y, cam_x, cam_y, player_vx, player_vy)
 
         # Update display
         pygame.display.flip()
 
-    def draw_debug_info(self, player_x, player_y, cam_x, cam_y):
+    def draw_debug_info(self, player_x, player_y, cam_x, cam_y, player_vx, player_vy):
         """Draw position and camera info on screen"""
+        velocity = (player_vx**2 + player_vy**2)**0.5
         info_lines = [
             f"Player: ({player_x:.1f}, {player_y:.1f})",
+            f"Velocity: {velocity:.1f} px/s",
             f"Camera: ({cam_x:.1f}, {cam_y:.1f})",
             "WASD/Arrows: Move",
             "ESC: Quit",
