@@ -328,11 +328,6 @@ class Renderer:
         self.draw_gun(player_x, player_y, player_rotation, right_gun_angle,
                      -7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
 
-        # Draw debug info
-        player_vx = render_data.get("player_vx", 0.0)
-        player_vy = render_data.get("player_vy", 0.0)
-        self.draw_debug_info(player_x, player_y, cam_x, cam_y, player_vx, player_vy)
-
         # Update display
         pygame.display.flip()
 
@@ -386,23 +381,6 @@ class Renderer:
         
         # Draw gun as a line
         pygame.draw.line(self.screen, (150, 150, 150), (screen_x, screen_y), (end_x, end_y), 2)
-
-    def draw_debug_info(self, player_x, player_y, cam_x, cam_y, player_vx, player_vy):
-        """Draw position and camera info on screen"""
-        velocity = (player_vx**2 + player_vy**2)**0.5
-        info_lines = [
-            f"Player: ({player_x:.1f}, {player_y:.1f})",
-            f"Velocity: {velocity:.1f} px/s",
-            f"Camera: ({cam_x:.1f}, {cam_y:.1f})",
-            "WASD/Arrows: Move",
-            "Space/Left Click (hold): Autofire",
-            "Space/Left Click (release): Tracking Shot",
-            "ESC: Quit",
-        ]
-
-        for i, line in enumerate(info_lines):
-            text = self.font.render(line, True, (255,255,255))
-            self.screen.blit(text, (10, 10 + i * 30))
 
 
 def main():

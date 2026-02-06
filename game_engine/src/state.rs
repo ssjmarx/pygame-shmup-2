@@ -46,15 +46,13 @@ pub struct Player {
     pub right_gun: Gun,
     
     // Shooting state
-    pub tracking_fired_this_click: bool,  // Track if we've fired tracking shot this click
     pub is_autofiring: bool,
     pub last_tracking_shot_time: f64,
     pub mouse_target_entity_id: Option<usize>,
     
     // Gun configuration
-    pub gun_length: f64,
-    pub movement_compensation: f64,
-    pub tracking_cooldown: f64,
+    pub gun_config: PlayerGunConfig,
+    pub autofire_spool_factor: f64,  // 0.0 (slow) to 1.0 (fast)
     
     // Physics constants
     pub rotation_speed: f64,
@@ -85,12 +83,10 @@ impl Default for Player {
 impl Player {
     pub fn new() -> Self {
         let gun_config = GunConfig::default();
-        let (left_offset_x, left_offset_y) = (7.5, 10.0);
-        let (right_offset_x, right_offset_y) = (-7.5, 10.0);
-        
-        // Dead zone offsets: left gun 45° counterclockwise (-π/4), right gun 45° clockwise (π/4)
-        let left_dead_zone_offset = -std::f64::consts::PI / 4.0;  // 45° counterclockwise
-        let right_dead_zone_offset = std::f64::consts::PI / 4.0;  // 45° clockwise
+        let left_offset_x = 7.5;
+        let left_offset_y = 10.0;
+        let right_offset_x = -7.5;
+        let right_offset_y = 10.0;
         
         Player {
             x: 0.0,
@@ -108,24 +104,22 @@ impl Player {
             alt_mode: false,
             
             // Guns
-            left_gun: Gun::new(left_offset_x, left_offset_y, gun_config.clone(), left_dead_zone_offset),
-            right_gun: Gun::new(right_offset_x, right_offset_y, gun_config, right_dead_zone_offset),
+            left_gun: Gun::new(left_offset_x, left_offset_y, gun_config.clone()),
+            right_gun: Gun::new(right_offset_x, right_offset_y, gun_config),
             
             // Shooting state
-            tracking_fired_this_click: false,
             is_autofiring: false,
             last_tracking_shot_time: 0.0,
             mouse_target_entity_id: None,
             
             // Gun configuration
-            gun_length: 10.0,                // Half of 20px height
-            movement_compensation: 1.0,
-            tracking_cooldown: 0.5,
+            gun_config: PlayerGunConfig::default(),
+            autofire_spool_factor: 0.0,
             
             rotation_speed: 4.0,              // ~229 degrees/second
             thruster_acceleration: 1000.0,     // Maneuvering thrusters
             main_engine_acceleration: 600.0,   // Normal main engine thrust
-            boost_engine_acceleration: 1200.0,  // Boost mode acceleration (was derived 600*2)
+            boost_engine_acceleration: 1200.0,  // Boost mode acceleration
             min_resistance: 100.0,            // Resistance floor
             resistance_max: 2400.0,           // Maximum resistance for rapid deceleration
             engine_spool_rate: 1.0,           // Time to reach full spool (seconds)
@@ -133,7 +127,7 @@ impl Player {
             engine_spool_max_factor: 1.0,       // Maximum engine power at full spool (100%)
             
             // Resistance scaling thresholds (multipliers of top speed)
-            resistance_threshold_low: 1.0,      // Below 1x: ramp from min to top_speed resistance
+            resistance_threshold_low: 1.0,      // Below 1x: ramp from min to top_speed
             resistance_threshold_high: 2.0,     // Above 2x: use resistance_max
             
             width: 15.0,
@@ -326,7 +320,6 @@ impl Player {
         self.rotation = self.facing_angle + std::f64::consts::PI / 2.0;
     }
     
-    
     /// Main update method
     pub fn update(&mut self, dt: f64) {
         // 1. Apply maneuvering thrusters (if active)
@@ -354,6 +347,18 @@ impl Player {
         self.x += self.vx * dt;
         self.y += self.vy * dt;
     }
+}
+
+/// Normalize angle to [-π, π]
+fn normalize_angle(angle: f64) -> f64 {
+    let mut a = angle;
+    while a > std::f64::consts::PI {
+        a -= 2.0 * std::f64::consts::PI;
+    }
+    while a < -std::f64::consts::PI {
+        a += 2.0 * std::f64::consts::PI;
+    }
+    a
 }
 
 /// Calculate shortest angle difference between two angles
@@ -441,20 +446,22 @@ impl GameState {
                     // Calculate angle from player to mouse
                     let dx = world_x - self.player.x;
                     let dy = world_y - self.player.y;
+                    
                     self.player.mouse_target_angle = Some(dy.atan2(dx));
                 }
                 Command::SetTargetEntity(entity_id) => {
                     self.player.mouse_target_entity_id = entity_id;
                 }
                 Command::StartShootingTracking => {
-                    // Fire tracking shot immediately on click
-                    if !self.player.tracking_fired_this_click {
-                        self.player.tracking_fired_this_click = true;
+                    // Check cooldown BEFORE firing
+                    let time_since_last = self.current_time - self.player.last_tracking_shot_time;
+                    
+                    if time_since_last >= self.player.gun_config.tracking_cooldown {
                         self.player.last_tracking_shot_time = self.current_time;
                         
                         let config = ProjectileConfig::default();
                         
-                        // Left gun - use player_rotation to transform offset position
+                        // Left gun - always fire
                         let left_angle = self.player.left_gun.get_firing_angle();
                         let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
                         let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
@@ -471,7 +478,7 @@ impl GameState {
                             self.player.left_gun.add_recoil(config.tracking_recoil_amount);
                         }
                         
-                        // Right gun - use player_rotation to transform offset position
+                        // Right gun - always fire
                         let right_angle = self.player.right_gun.get_firing_angle();
                         let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
                         let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
@@ -490,7 +497,7 @@ impl GameState {
                     }
                 }
                 Command::StopShootingTracking => {
-                    self.player.tracking_fired_this_click = false;
+                    // No longer tracking firing state (removed)
                 }
                 Command::StartAutoFire => {
                     self.player.is_autofiring = true;
@@ -526,7 +533,7 @@ impl GameState {
             self.player.vx,
             self.player.vy,
             self.player.get_top_speed(),
-            self.player.movement_compensation,
+            self.player.gun_config.movement_compensation,
             dt
         );
         
@@ -536,20 +543,34 @@ impl GameState {
             self.player.vx,
             self.player.vy,
             self.player.get_top_speed(),
-            self.player.movement_compensation,
+            self.player.gun_config.movement_compensation,
             dt
         );
         
         // Handle autofire (hold) BEFORE player movement
         // This ensures spawn points use pre-movement player position
         if self.player.is_autofiring {
-            // Spool up autofire rate
+            // Spool up autofire rate and update spool factor
             self.player.left_gun.spool_up_autofire(dt);
             self.player.right_gun.spool_up_autofire(dt);
             
+            // Calculate spool factor based on cooldown current value
+            // Cooldown starts at 0.5s and decreases to 0.1s
+            // Spool factor 0% = 0.5s (slow), 100% = 0.1s (fast)
+            let current_cooldown = self.player.left_gun.autofire_cooldown_current;
+            let spool_start = 0.5;  // autofire_cooldown_start from config
+            let spool_min = 0.1;    // autofire_cooldown_min from config
+            let spool_range = spool_start - spool_min;
+            let spool_factor = if spool_range > 0.0 {
+                (spool_start - current_cooldown).max(0.0) / spool_range
+            } else {
+                1.0
+            };
+            self.player.autofire_spool_factor = spool_factor;
+            
             let config = ProjectileConfig::default();
             
-            // Check if left gun can fire
+            // Left gun - always fire if ready
             if self.player.left_gun.update_autofire(self.current_time) {
                 let left_angle = self.player.left_gun.get_firing_angle();
                 let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
@@ -562,7 +583,7 @@ impl GameState {
                 self.player.left_gun.add_recoil(config.autofire_recoil_amount);
             }
             
-            // Check if right gun can fire
+            // Right gun - always fire if ready
             if self.player.right_gun.update_autofire(self.current_time) {
                 let right_angle = self.player.right_gun.get_firing_angle();
                 let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
@@ -574,6 +595,38 @@ impl GameState {
                                                            self.player.vx, self.player.vy));
                 self.player.right_gun.add_recoil(config.autofire_recoil_amount);
             }
+        } else {
+            // Spool down when not autofiring
+            self.player.left_gun.update_tracking_with_ship(
+                self.player.facing_angle,
+                self.player.rotation,
+                self.player.vx,
+                self.player.vy,
+                self.player.get_top_speed(),
+                self.player.gun_config.movement_compensation,
+                dt
+            );
+            self.player.right_gun.update_tracking_with_ship(
+                self.player.facing_angle,
+                self.player.rotation,
+                self.player.vx,
+                self.player.vy,
+                self.player.get_top_speed(),
+                self.player.gun_config.movement_compensation,
+                dt
+            );
+            
+            // Update spool factor (spooling down)
+            let current_cooldown = self.player.left_gun.autofire_cooldown_current;
+            let spool_start = 0.5;  // autofire_cooldown_start from config
+            let spool_min = 0.1;    // autofire_cooldown_min from config
+            let spool_range = spool_start - spool_min;
+            let spool_factor = if spool_range > 0.0 {
+                (spool_start - current_cooldown).max(0.0) / spool_range
+            } else {
+                1.0
+            };
+            self.player.autofire_spool_factor = spool_factor;
         }
         
         // Update player physics

@@ -80,6 +80,12 @@ pub struct PlayerGunConfig {
     
     /// Cooldown between tracking shots (seconds)
     pub tracking_cooldown: f64,
+    
+    /// Front overlap angle (radians) where both guns fire
+    pub front_overlap_angle: f64,
+    
+    /// Rear overlap angle (radians) where both guns fire
+    pub rear_overlap_angle: f64,
 }
 
 impl Default for GunConfig {
@@ -90,8 +96,8 @@ impl Default for GunConfig {
             recoil_decay_rate: 2.0,           // 0.5s decay
             autofire_cooldown_start: 0.5,      // 1 shot per 0.5s
             autofire_cooldown_min: 0.1,        // 1 shot per 0.1s
-            autofire_spool_rate: 0.4,          // 0.5s to 0.1s in 1s
-            autofire_spool_down_rate: 0.4,      // Same as spool-up
+            autofire_spool_rate: 0.2,          // 2.0s to 0.1s (doubled)
+            autofire_spool_down_rate: 0.2,      // 2.0s from 0.1s (doubled)
             movement_compensation_scale: 0.1,
             recoil_random_offset_max: 0.5,       // ±0.5 radians max
             recoil_stack_multiplier: 5.0,
@@ -138,6 +144,8 @@ impl Default for PlayerGunConfig {
             gun_length: 10.0,                // Half of 20px height
             movement_compensation: 1.0,
             tracking_cooldown: 0.5,
+            front_overlap_angle: std::f64::consts::PI / 4.0,  // 45° front
+            rear_overlap_angle: std::f64::consts::PI / 4.0,   // 45° rear
         }
     }
 }

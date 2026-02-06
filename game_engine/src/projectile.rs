@@ -139,10 +139,10 @@ impl Projectile {
                 // Scanning for new targets
                 self.scan_timer -= dt;
                 if self.scan_timer <= 0.0 {
-                    // Scan for nearby entities
+                    // Scan for nearby entities, excluding player (ID 999)
                     self.scan_timer = self.config.tracking_scan_interval;
                     
-                    if let Some(target) = self.find_nearest_target(entities) {
+                    if let Some(target) = self.find_nearest_target(entities, &[999]) {
                         self.target_id = Some(target);
                         self.is_scanning = false;
                     }
@@ -156,11 +156,16 @@ impl Projectile {
         }
     }
     
-    fn find_nearest_target(&self, entities: &[(f64, f64, usize)]) -> Option<usize> {
+    fn find_nearest_target(&self, entities: &[(f64, f64, usize)], exclude_ids: &[usize]) -> Option<usize> {
         let mut nearest_id = None;
         let mut nearest_dist = self.scan_radius;
         
         for &(ex, ey, id) in entities {
+            // Skip excluded entities (player ID 999)
+            if exclude_ids.contains(&id) {
+                continue;
+            }
+            
             let dx = ex - self.x;
             let dy = ey - self.y;
             let dist = (dx * dx + dy * dy).sqrt();
