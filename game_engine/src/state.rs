@@ -1,7 +1,7 @@
 use crate::command::Command;
 use crate::config::{GunConfig, ProjectileConfig, PlayerGunConfig};
 use crate::camera::Camera;
-use crate::gun::Gun;
+use crate::gun::{FireSector, Gun, get_fire_sector};
 use crate::object_pool::ObjectPool;
 use crate::player::Player;
 use crate::projectile::{Projectile, ProjectileRenderData, ProjectileType};
@@ -16,6 +16,8 @@ pub struct GameState {
     camera: Camera,
     current_time: f64,
     prev_control_mode: bool,  // Track control mode transitions
+    was_autofiring: bool,      // Track if autofire was active (for tracking shot prevention)
+    autofire_start_time: f64,  // Track when autofire started (for 0.5s delay)
 }
 
 impl GameState {
@@ -42,6 +44,8 @@ impl GameState {
             camera: Camera::new(0.0, 0.0, 800.0, 600.0),
             current_time: 0.0,
             prev_control_mode: false,
+            was_autofiring: false,
+            autofire_start_time: 0.0,
         }
     }
 
@@ -79,57 +83,76 @@ impl GameState {
                     self.player.mouse_target_entity_id = entity_id;
                 }
                 Command::StartShootingTracking => {
-                    // Check cooldown BEFORE firing
-                    let time_since_last = self.current_time - self.player.last_tracking_shot_time;
-                    
-                    if time_since_last >= self.player.gun_config.tracking_cooldown {
-                        self.player.last_tracking_shot_time = self.current_time;
+                    // Prevent tracking shot if was autofiring (only fire on brief clicks)
+                    if self.was_autofiring {
+                        self.was_autofiring = false;  // Reset flag
+                        // Don't fire tracking shot
+                    } else {
+                        // Check cooldown BEFORE firing
+                        let time_since_last = self.current_time - self.player.last_tracking_shot_time;
                         
-                        let config = ProjectileConfig::default();
-                        
-                        // Left gun - always fire
-                        let left_angle = self.player.left_gun.get_firing_angle();
-                        let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
-                        let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
-                        let left_x = self.player.x + left_rx;
-                        let left_y = self.player.y + left_ry;
-                        
-                        if let Some(_) = self.projectiles.allocate(Projectile::new_tracking(
-                            left_x, left_y, left_angle,
-                            None,  // Don't target player
-                            config.clone(),
-                            self.player.vx,
-                            self.player.vy
-                        )) {
-                            self.player.left_gun.add_recoil(config.tracking_recoil_amount);
-                        }
-                        
-                        // Right gun - always fire
-                        let right_angle = self.player.right_gun.get_firing_angle();
-                        let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
-                        let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
-                        let right_x = self.player.x + right_rx;
-                        let right_y = self.player.y + right_ry;
-                        
-                        if let Some(_) = self.projectiles.allocate(Projectile::new_tracking(
-                            right_x, right_y, right_angle,
-                            None,  // Don't target player
-                            config.clone(),
-                            self.player.vx,
-                            self.player.vy
-                        )) {
-                            self.player.right_gun.add_recoil(config.tracking_recoil_amount);
+                        if time_since_last >= self.player.gun_config.tracking_cooldown {
+                            self.player.last_tracking_shot_time = self.current_time;
+                            
+                            // Calculate fire sector based on mouse position relative to player
+                            let sector = get_fire_sector(
+                                self.player.mouse_target_angle.unwrap_or(self.player.facing_angle),
+                                self.player.facing_angle
+                            );
+                            
+                            let config = ProjectileConfig::default();
+                            
+                            // Left gun fires only in Left or Both sectors
+                            if sector == FireSector::Left || sector == FireSector::Both {
+                                let left_angle = self.player.left_gun.get_firing_angle();
+                                let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
+                                let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
+                                let left_x = self.player.x + left_rx;
+                                let left_y = self.player.y + left_ry;
+                                
+                                if let Some(_) = self.projectiles.allocate(Projectile::new_tracking(
+                                    left_x, left_y, left_angle,
+                                    None,  // Don't target player
+                                    config.clone(),
+                                    self.player.vx,
+                                    self.player.vy
+                                )) {
+                                    self.player.left_gun.add_recoil(config.tracking_recoil_amount);
+                                }
+                            }
+                            
+                            // Right gun fires only in Right or Both sectors
+                            if sector == FireSector::Right || sector == FireSector::Both {
+                                let right_angle = self.player.right_gun.get_firing_angle();
+                                let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
+                                let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
+                                let right_x = self.player.x + right_rx;
+                                let right_y = self.player.y + right_ry;
+                                
+                                if let Some(_) = self.projectiles.allocate(Projectile::new_tracking(
+                                    right_x, right_y, right_angle,
+                                    None,  // Don't target player
+                                    config.clone(),
+                                    self.player.vx,
+                                    self.player.vy
+                                )) {
+                                    self.player.right_gun.add_recoil(config.tracking_recoil_amount);
+                                }
+                            }
                         }
                     }
+                    self.was_autofiring = false;  // Reset flag
                 }
                 Command::StopShootingTracking => {
                     // No longer tracking firing state (removed)
                 }
                 Command::StartAutoFire => {
                     self.player.is_autofiring = true;
+                    self.autofire_start_time = self.current_time;  // Record when autofire started
                 }
                 Command::StopAutoFire => {
                     self.player.is_autofiring = false;
+                    // Don't reset was_autofiring here - let StartShootingTracking handle it
                 }
             }
         }
@@ -152,7 +175,62 @@ impl GameState {
             self.player.right_gun.set_target_angle(mouse_angle);
         }
         
+        // Handle autofire (hold) BEFORE player movement
+        // This ensures spawn points use pre-movement player position
+        if self.player.is_autofiring {
+            // Check if 0.5s delay has passed
+            let autofire_active = self.current_time - self.autofire_start_time >= 0.5;
+            
+            // Spool up autofire rate immediately when holding (not after delay)
+            self.player.left_gun.spool_up_autofire(dt);
+            self.player.right_gun.spool_up_autofire(dt);
+            
+            // Only fire bullets after 0.5s delay has passed
+            if autofire_active {
+                self.was_autofiring = true;
+                
+                // Fire bullets
+                let sector = get_fire_sector(
+                    self.player.mouse_target_angle.unwrap_or(self.player.facing_angle),
+                    self.player.facing_angle
+                );
+                
+                let config = ProjectileConfig::default();
+                
+                // Left gun fires only in Left or Both sectors
+                if sector == FireSector::Left || sector == FireSector::Both {
+                    if self.player.left_gun.update_autofire(self.current_time) {
+                        let left_angle = self.player.left_gun.get_firing_angle();
+                        let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
+                        let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
+                        let left_x = self.player.x + left_rx;
+                        let left_y = self.player.y + left_ry;
+                        
+                        self.projectiles.allocate(Projectile::new_autofire(left_x, left_y, left_angle, config.clone(),
+                                                                     self.player.vx, self.player.vy));
+                        self.player.left_gun.add_recoil(config.autofire_recoil_amount);
+                    }
+                }
+                
+                // Right gun fires only in Right or Both sectors
+                if sector == FireSector::Right || sector == FireSector::Both {
+                    if self.player.right_gun.update_autofire(self.current_time) {
+                        let right_angle = self.player.right_gun.get_firing_angle();
+                        let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
+                        let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
+                        let right_x = self.player.x + right_rx;
+                        let right_y = self.player.y + right_ry;
+                        
+                        self.projectiles.allocate(Projectile::new_autofire(right_x, right_y, right_angle, config.clone(),
+                                                                       self.player.vx, self.player.vy));
+                        self.player.right_gun.add_recoil(config.autofire_recoil_amount);
+                    }
+                }
+            }
+        }
+        
         // Update both guns - pass player rotation so guns can rotate their base angle
+        // This happens EVERY frame for tracking and spool down
         self.player.left_gun.update_tracking_with_ship(
             self.player.facing_angle,
             self.player.rotation,  // Ship's visual rotation
@@ -172,88 +250,6 @@ impl GameState {
             self.player.gun_config.movement_compensation,
             dt
         );
-        
-        // Handle autofire (hold) BEFORE player movement
-        // This ensures spawn points use pre-movement player position
-        if self.player.is_autofiring {
-            // Spool up autofire rate and update spool factor
-            self.player.left_gun.spool_up_autofire(dt);
-            self.player.right_gun.spool_up_autofire(dt);
-            
-            // Calculate spool factor based on cooldown current value
-            // Cooldown starts at 0.5s and decreases to 0.1s
-            // Spool factor 0% = 0.5s (slow), 100% = 0.1s (fast)
-            let current_cooldown = self.player.left_gun.autofire_cooldown_current;
-            let spool_start = 0.5;  // autofire_cooldown_start from config
-            let spool_min = 0.1;    // autofire_cooldown_min from config
-            let spool_range = spool_start - spool_min;
-            let spool_factor = if spool_range > 0.0 {
-                (spool_start - current_cooldown).max(0.0) / spool_range
-            } else {
-                1.0
-            };
-            self.player.autofire_spool_factor = spool_factor;
-            
-            let config = ProjectileConfig::default();
-            
-            // Left gun - always fire if ready
-            if self.player.left_gun.update_autofire(self.current_time) {
-                let left_angle = self.player.left_gun.get_firing_angle();
-                let left_rx = self.player.left_gun.offset_x * self.player.rotation.cos() - self.player.left_gun.offset_y * self.player.rotation.sin();
-                let left_ry = self.player.left_gun.offset_x * self.player.rotation.sin() + self.player.left_gun.offset_y * self.player.rotation.cos();
-                let left_x = self.player.x + left_rx;
-                let left_y = self.player.y + left_ry;
-                
-                self.projectiles.allocate(Projectile::new_autofire(left_x, left_y, left_angle, config.clone(),
-                                                         self.player.vx, self.player.vy));
-                self.player.left_gun.add_recoil(config.autofire_recoil_amount);
-            }
-            
-            // Right gun - always fire if ready
-            if self.player.right_gun.update_autofire(self.current_time) {
-                let right_angle = self.player.right_gun.get_firing_angle();
-                let right_rx = self.player.right_gun.offset_x * self.player.rotation.cos() - self.player.right_gun.offset_y * self.player.rotation.sin();
-                let right_ry = self.player.right_gun.offset_x * self.player.rotation.sin() + self.player.right_gun.offset_y * self.player.rotation.cos();
-                let right_x = self.player.x + right_rx;
-                let right_y = self.player.y + right_ry;
-                
-                self.projectiles.allocate(Projectile::new_autofire(right_x, right_y, right_angle, config.clone(),
-                                                           self.player.vx, self.player.vy));
-                self.player.right_gun.add_recoil(config.autofire_recoil_amount);
-            }
-        } else {
-            // Spool down when not autofiring
-            self.player.left_gun.update_tracking_with_ship(
-                self.player.facing_angle,
-                self.player.rotation,
-                self.player.vx,
-                self.player.vy,
-                self.player.get_top_speed(),
-                self.player.gun_config.movement_compensation,
-                dt
-            );
-            self.player.right_gun.update_tracking_with_ship(
-                self.player.facing_angle,
-                self.player.rotation,
-                self.player.vx,
-                self.player.vy,
-                self.player.get_top_speed(),
-                self.player.gun_config.movement_compensation,
-                dt
-            );
-            
-            // Update spool factor (spooling down)
-            let current_cooldown = self.player.left_gun.autofire_cooldown_current;
-            let spool_start = 0.5;  // autofire_cooldown_start from config
-            let spool_min = 0.1;    // autofire_cooldown_min from config
-            let spool_range = spool_start - spool_min;
-            let spool_factor = if spool_range > 0.0 {
-                (spool_start - current_cooldown).max(0.0) / spool_range
-            } else {
-                1.0
-            };
-            self.player.autofire_spool_factor = spool_factor;
-        }
         
         // Update player physics
         self.player.update(dt);

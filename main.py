@@ -278,10 +278,18 @@ class Renderer:
         for star in stars:
             self.draw_star(star, scale, cam_x_scaled, cam_y_scaled)
         
-        # Draw projectiles (in front of stars)
-        projectiles = render_data.get("projectiles", [])
-        for proj in projectiles:
-            self.draw_projectile(proj, scale)
+        # Draw guns BEFORE player (so they appear behind the ship)
+        # Use PLAYER_COLOR to match player ship color
+        left_gun_angle = render_data.get("left_gun_angle", -math.pi / 2)
+        right_gun_angle = render_data.get("right_gun_angle", -math.pi / 2)
+        
+        # Left gun (offset_x: 7.5, offset_y: 10.0)
+        self.draw_gun(player_x, player_y, player_rotation, left_gun_angle, 
+                     7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
+        
+        # Right gun (offset_x: -7.5, offset_y: 10.0)
+        self.draw_gun(player_x, player_y, player_rotation, right_gun_angle,
+                     -7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
 
         # Convert to screen coordinates
         screen_x = int(player_x_scaled - cam_x_scaled)
@@ -316,17 +324,17 @@ class Renderer:
         stroke_width = int(1.5 * scale)
         pygame.draw.polygon(self.screen, PLAYER_COLOR, rotated_vertices, stroke_width)
         
-        # Draw guns
-        left_gun_angle = render_data.get("left_gun_angle", -math.pi / 2)
-        right_gun_angle = render_data.get("right_gun_angle", -math.pi / 2)
+        # Draw projectiles (in front of player)
+        projectiles = render_data.get("projectiles", [])
+        for proj in projectiles:
+            self.draw_projectile(proj, scale)
         
-        # Left gun (offset_x: 7.5, offset_y: 10.0)
-        self.draw_gun(player_x, player_y, player_rotation, left_gun_angle, 
-                     7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
-        
-        # Right gun (offset_x: -7.5, offset_y: 10.0)
-        self.draw_gun(player_x, player_y, player_rotation, right_gun_angle,
-                     -7.5, 10.0, scale, cam_x_scaled, cam_y_scaled)
+        # Draw debug info (spool level)
+        left_spool = render_data.get("left_gun_spool", 0.0)
+        right_spool = render_data.get("right_gun_spool", 0.0)
+        spool_text = f"Left Spool: {left_spool*100:.0f}%  Right Spool: {right_spool*100:.0f}%"
+        text_surface = self.font.render(spool_text, True, (255, 255, 255))
+        self.screen.blit(text_surface, (10, 10))
 
         # Update display
         pygame.display.flip()
@@ -358,7 +366,7 @@ class Renderer:
         pygame.draw.line(self.screen, color, (start_x, start_y), (end_x, end_y), bullet_width)
     
     def draw_gun(self, player_x, player_y, player_rotation, gun_angle, offset_x, offset_y, scale, cam_x_scaled, cam_y_scaled):
-        """Draw a single gun mounted on the player"""
+        """Draw a single gun mounted on player"""
         # Calculate gun position (rotated with player)
         # Rotate offset by player rotation
         rx = offset_x * math.cos(player_rotation) - offset_y * math.sin(player_rotation)
@@ -379,8 +387,9 @@ class Renderer:
         end_x = screen_x + math.cos(gun_angle) * gun_length
         end_y = screen_y + math.sin(gun_angle) * gun_length
         
-        # Draw gun as a line
-        pygame.draw.line(self.screen, (150, 150, 150), (screen_x, screen_y), (end_x, end_y), 2)
+        # Draw gun as a line using PLAYER_COLOR, same thickness as player triangle stroke
+        stroke_width = int(1.5 * scale)
+        pygame.draw.line(self.screen, PLAYER_COLOR, (screen_x, screen_y), (end_x, end_y), stroke_width)
 
 
 def main():

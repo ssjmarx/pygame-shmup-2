@@ -18,6 +18,9 @@ pub struct Projectile {
     pub vx: f64,
     pub vy: f64,
     
+    // Orientation (spawn angle for initial alignment)
+    pub spawn_angle: f64,       // Angle when bullet was spawned (from gun)
+    
     // Properties
     pub projectile_type: ProjectileType,
     pub size: f64,              // Width of pill shape
@@ -46,6 +49,7 @@ impl Default for Projectile {
             y: 0.0,
             vx: 0.0,
             vy: 0.0,
+            spawn_angle: 0.0,
             projectile_type: ProjectileType::AutoFire,
             size: 3.0,
             length: 6.0,
@@ -75,6 +79,7 @@ impl Projectile {
             y,
             vx,
             vy,
+            spawn_angle: angle,  // Store gun angle at spawn
             projectile_type: ProjectileType::Tracking,
             size: config.tracking_size,
             length: config.tracking_length,
@@ -101,6 +106,7 @@ impl Projectile {
             y,
             vx,
             vy,
+            spawn_angle: angle,  // Store gun angle at spawn
             projectile_type: ProjectileType::AutoFire,
             size: config.autofire_size,
             length: config.autofire_length,
@@ -227,10 +233,16 @@ impl Projectile {
     }
     
     pub fn get_rotation(&self) -> f64 {
-        if self.vx.abs() < 0.01 && self.vy.abs() < 0.01 {
-            0.0
+        // For tracking bullets, use current velocity direction (updates as bullet turns)
+        // For autofire bullets, use spawn angle (alignment stays fixed to gun)
+        if self.projectile_type == ProjectileType::Tracking {
+            if self.vx.abs() < 0.01 && self.vy.abs() < 0.01 {
+                self.spawn_angle
+            } else {
+                self.vy.atan2(self.vx)
+            }
         } else {
-            self.vy.atan2(self.vx)
+            self.spawn_angle
         }
     }
     

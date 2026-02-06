@@ -10,17 +10,17 @@ pub struct GunConfig {
     /// Recoil decay rate (2.0 = 0.5s decay to zero)
     pub recoil_decay_rate: f64,
     
-    /// Initial autofire cooldown in seconds
+    /// Initial autofire cooldown in seconds (at spool 0%)
     pub autofire_cooldown_start: f64,
     
-    /// Minimum autofire cooldown in seconds (at full spool)
+    /// Minimum autofire cooldown in seconds (at spool 100%)
     pub autofire_cooldown_min: f64,
     
-    /// Rate of spool-up (seconds per second)
-    pub autofire_spool_rate: f64,
+    /// Time to spool up from 0% to 100% (seconds)
+    pub spool_up_time: f64,
     
-    /// Rate of spool-down (seconds per second)
-    pub autofire_spool_down_rate: f64,
+    /// Time to spool down from 100% to 0% (seconds)
+    pub spool_down_time: f64,
     
     /// Movement compensation scale factor
     pub movement_compensation_scale: f64,
@@ -94,10 +94,10 @@ impl Default for GunConfig {
             rotation_speed: 4.0,              // Equal to player rotation
             rotation_limit_degrees: 200.0,     // ±100 degrees from forward
             recoil_decay_rate: 2.0,           // 0.5s decay
-            autofire_cooldown_start: 0.5,      // 1 shot per 0.5s
+            autofire_cooldown_start: 1.0,      // 1 shot per 1s (halved from 0.5s)
             autofire_cooldown_min: 0.1,        // 1 shot per 0.1s
-            autofire_spool_rate: 0.2,          // 2.0s to 0.1s (doubled)
-            autofire_spool_down_rate: 0.2,      // 2.0s from 0.1s (doubled)
+            spool_up_time: 4.0,                // 4 seconds to spool from 0% to 100%
+            spool_down_time: 4.0,              // 4 seconds to spool from 100% to 0%
             movement_compensation_scale: 0.1,
             recoil_random_offset_max: 0.5,       // ±0.5 radians max
             recoil_stack_multiplier: 5.0,

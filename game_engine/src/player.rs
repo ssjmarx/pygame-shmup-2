@@ -48,7 +48,6 @@ pub struct Player {
     
     // Gun configuration
     pub gun_config: PlayerGunConfig,
-    pub autofire_spool_factor: f64,  // 0.0 (slow) to 1.0 (fast)
     
     // Physics constants
     pub rotation_speed: f64,
@@ -110,7 +109,6 @@ impl Player {
             
             // Gun configuration
             gun_config: PlayerGunConfig::default(),
-            autofire_spool_factor: 0.0,
             
             rotation_speed: 4.0,              // ~229 degrees/second
             thruster_acceleration: 1000.0,     // Maneuvering thrusters

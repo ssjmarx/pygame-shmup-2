@@ -157,11 +157,12 @@ impl GameEngine {
         dict.set_item("camera_y", cam_y)?;
         dict.set_item("player_vx", player.vx)?;
         dict.set_item("player_vy", player.vy)?;
-        dict.set_item("autofire_spool", player.autofire_spool_factor)?;
         dict.set_item("stars", stars_list)?;
         dict.set_item("projectiles", projectiles_list)?;
         dict.set_item("left_gun_angle", left_gun_angle)?;
         dict.set_item("right_gun_angle", right_gun_angle)?;
+        dict.set_item("left_gun_spool", player.left_gun.spool_level)?;
+        dict.set_item("right_gun_spool", player.right_gun.spool_level)?;
         Ok(dict.unbind().into())
     }
 }
