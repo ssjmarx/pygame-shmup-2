@@ -328,13 +328,6 @@ class Renderer:
         projectiles = render_data.get("projectiles", [])
         for proj in projectiles:
             self.draw_projectile(proj, scale)
-        
-        # Draw debug info (spool level)
-        left_spool = render_data.get("left_gun_spool", 0.0)
-        right_spool = render_data.get("right_gun_spool", 0.0)
-        spool_text = f"Left Spool: {left_spool*100:.0f}%  Right Spool: {right_spool*100:.0f}%"
-        text_surface = self.font.render(spool_text, True, (255, 255, 255))
-        self.screen.blit(text_surface, (10, 10))
 
         # Update display
         pygame.display.flip()
