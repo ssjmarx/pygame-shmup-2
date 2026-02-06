@@ -1,9 +1,11 @@
 use pyo3::prelude::*;
 
+mod camera;
 mod command;
 mod config;
 mod gun;
 mod object_pool;
+mod player;
 mod projectile;
 mod star;
 mod state;
